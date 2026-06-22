@@ -16,13 +16,10 @@ COPY searx/ ./searx/
 COPY setup.py ./
 
 # Create version_frozen.py to avoid git dependency
-RUN python3 -c "
-with open('searx/version_frozen.py', 'w') as f:
-    f.write('VERSION_STRING = \"poc-build\"\\n')
-    f.write('VERSION_TAG = \"poc\"\\n')
-    f.write('GIT_URL = \"https://github.com/searxng/searxng\"\\n')
-    f.write('GIT_BRANCH = \"main\"\\n')
-"
+RUN echo 'VERSION_STRING = "poc-build"' > searx/version_frozen.py && \
+    echo 'VERSION_TAG = "poc"' >> searx/version_frozen.py && \
+    echo 'GIT_URL = "https://github.com/searxng/searxng"' >> searx/version_frozen.py && \
+    echo 'GIT_BRANCH = "main"' >> searx/version_frozen.py
 
 # Copy container config files
 COPY container/settings.template.yml ./settings.template.yml
