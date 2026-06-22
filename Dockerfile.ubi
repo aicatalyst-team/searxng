@@ -1,0 +1,50 @@
+FROM registry.access.redhat.com/ubi9/python-312 AS builder
+
+WORKDIR /opt/app-root/src
+
+# Install build deps for lxml and granian (Rust-based)
+USER 0
+RUN dnf install -y gcc gcc-c++ libxml2-devel libxslt-devel python3-devel && dnf clean all
+USER 1001
+
+# Install Python dependencies
+COPY requirements.txt requirements-server.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-server.txt
+
+# Copy application code
+COPY searx/ ./searx/
+COPY setup.py ./
+
+# Create version_frozen.py to avoid git dependency
+RUN python3 -c "
+with open('searx/version_frozen.py', 'w') as f:
+    f.write('VERSION_STRING = \"poc-build\"\\n')
+    f.write('VERSION_TAG = \"poc\"\\n')
+    f.write('GIT_URL = \"https://github.com/searxng/searxng\"\\n')
+    f.write('GIT_BRANCH = \"main\"\\n')
+"
+
+# Copy container config files
+COPY container/settings.template.yml ./settings.template.yml
+COPY container/entrypoint.sh ./entrypoint.sh
+
+# Set up directories and permissions
+USER 0
+RUN mkdir -p /etc/searxng /var/lib/searxng \
+    && cp settings.template.yml /etc/searxng/settings.yml \
+    && sed -i "s/ultrasecretkey/$(head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')/g" /etc/searxng/settings.yml \
+    && chgrp -R 0 /opt/app-root /etc/searxng /var/lib/searxng \
+    && chmod -R g=u /opt/app-root /etc/searxng /var/lib/searxng \
+    && chmod +x entrypoint.sh
+
+USER 1001
+
+ENV SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+ENV GRANIAN_INTERFACE=wsgi
+ENV GRANIAN_HOST=0.0.0.0
+ENV GRANIAN_PORT=8080
+ENV GRANIAN_BLOCKING_THREADS=4
+
+EXPOSE 8080
+
+CMD ["granian", "searx.webapp:app", "--interface", "wsgi", "--host", "0.0.0.0", "--port", "8080"]
