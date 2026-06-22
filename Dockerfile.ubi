@@ -1,13 +1,12 @@
-FROM registry.access.redhat.com/ubi9/python-312 AS builder
+FROM registry.access.redhat.com/ubi9/python-312
 
 WORKDIR /opt/app-root/src
 
 # Install build deps for lxml and granian (Rust-based)
 USER 0
 RUN dnf install -y gcc gcc-c++ libxml2-devel libxslt-devel python3-devel && dnf clean all
-USER 1001
 
-# Install Python dependencies
+# Install Python dependencies (as root so pip can install globally)
 COPY requirements.txt requirements-server.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-server.txt
 
@@ -15,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-server.txt
 COPY searx/ ./searx/
 COPY setup.py ./
 
-# Create version_frozen.py to avoid git dependency
+# Create version_frozen.py to avoid git dependency (as root since searx/ is root-owned)
 RUN echo 'VERSION_STRING = "poc-build"' > searx/version_frozen.py && \
     echo 'VERSION_TAG = "poc"' >> searx/version_frozen.py && \
     echo 'GIT_URL = "https://github.com/searxng/searxng"' >> searx/version_frozen.py && \
@@ -23,16 +22,13 @@ RUN echo 'VERSION_STRING = "poc-build"' > searx/version_frozen.py && \
 
 # Copy container config files
 COPY container/settings.template.yml ./settings.template.yml
-COPY container/entrypoint.sh ./entrypoint.sh
 
 # Set up directories and permissions
-USER 0
 RUN mkdir -p /etc/searxng /var/lib/searxng \
     && cp settings.template.yml /etc/searxng/settings.yml \
     && sed -i "s/ultrasecretkey/$(head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')/g" /etc/searxng/settings.yml \
     && chgrp -R 0 /opt/app-root /etc/searxng /var/lib/searxng \
-    && chmod -R g=u /opt/app-root /etc/searxng /var/lib/searxng \
-    && chmod +x entrypoint.sh
+    && chmod -R g=u /opt/app-root /etc/searxng /var/lib/searxng
 
 USER 1001
 
